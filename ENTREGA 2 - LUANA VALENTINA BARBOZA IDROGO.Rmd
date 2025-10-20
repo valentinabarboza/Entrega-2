@@ -1,0 +1,49 @@
+---
+title: "ENTREGA 2"
+output: html_document
+date: "2025-10-17"
+---
+```{r}
+pkgs <- c("rio","dplyr","tidyr","readr","readxl","janitor","stringr","countrycode","lubridate","purrr")
+to_install <- setdiff(pkgs, rownames(installed.packages()))
+if(length(to_install)) install.packages(to_install)
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+# Países de América (ISO3) — ajusta si quieres incluir/ excluir alguno
+amer_iso3 <- countrycode(c(
+  "Antigua and Barbuda","Argentina","Bahamas","Barbados","Belize","Bolivia",
+  "Brazil","Canada","Chile","Colombia","Costa Rica","Cuba","Dominica",
+  "Dominican Republic","Ecuador","El Salvador","Grenada","Guatemala","Guyana",
+  "Haiti","Honduras","Jamaica","Mexico","Nicaragua","Panama","Paraguay","Peru",
+  "Saint Kitts and Nevis","Saint Lucia","Saint Vincent and the Grenadines",
+  "Suriname","Trinidad and Tobago","United States","Uruguay","Venezuela"
+), "country.name", "iso3c")
+
+yrs <- 2021:2023
+```
+
+
+
+```{r}
+library(rio)
+Población_mundial = import ("POBLACIÓN MUNDIAL.xlsx")
+```
+
+```{r}
+library(rio)
+PBI_mundial = import ("PBI PER CÁPITA income group.xlsx")
+```
+
+
+#Indice de democracia
+```{r}
+vdem  = import("V-Dem-CY-Core-v15.csv")
+```
+
+
+#PRODUCCIÓN DE MARIHUANA
+```{r}
+library(rio)
+Producción_marihuana = import ("Cannabis_cultivation_production_and_eradication.xlsx")
+```
+
