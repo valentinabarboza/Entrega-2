@@ -1,5 +1,4 @@
 # Entrega-2
-# Entrega-2
 # Narcotráfico en América (2021–2023): marihuana y cocaína
 
 Este repositorio contiene la organización y limpieza de datos para el curso **Estadística para el análisis político 2**. 
