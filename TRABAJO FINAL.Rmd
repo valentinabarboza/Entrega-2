@@ -1,0 +1,595 @@
+---
+title: "TRABAJO FINAL"
+output: html_document
+date: "2025-11-21"
+---
+
+
+```{r}
+rm(list = ls())
+library(rio)
+
+linkToData <- "https://raw.githubusercontent.com/valentinabarboza/Entrega-2/main/data_final.xls"
+
+DATA <- import(linkToData)
+str(DATA)
+```
+
+```{r}
+library(dplyr)
+DATA <- DATA %>% 
+  rename(democracia = 'Electoral Democracy Index')
+```
+
+```{r}
+DATA <- DATA %>% 
+  rename(poblacion = 'World Population')
+```
+
+```{r}
+DATA <- DATA %>% 
+  rename(corrupcion = 'CPI SCORE')
+```
+
+```{r}
+DATA <- DATA %>% 
+  rename(Ningresos = 'Income group')
+```
+
+
+```{r}
+DATA$kilos_totales <- as.numeric(DATA$kilos_totales)
+```
+
+
+#variable dependiente
+
+```{r}
+# Descripción estadística de la variable dependiente
+vd_desc <- data.frame(
+  Variable = "Kilos totales incautados (kg)",
+  N       = sum(!is.na(DATA$kilos_totales)),
+  Min     = min(DATA$kilos_totales, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$kilos_totales, 0.25, na.rm = TRUE)),  # sin "25%"
+  Mediana = median(DATA$kilos_totales, na.rm = TRUE),
+  Media   = mean(DATA$kilos_totales, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$kilos_totales, 0.75, na.rm = TRUE)),  # sin "75%"
+  Max     = max(DATA$kilos_totales, na.rm = TRUE),
+  SD      = sd(DATA$kilos_totales, na.rm = TRUE)
+)
+
+knitr::kable(
+  vd_desc,
+  digits = 2,
+  row.names = FALSE,   # <-- esto oculta cualquier nombre de fila
+  caption = "Descripción estadística de la variable dependiente"
+)
+```
+
+
+```{r}
+boxplot(
+  DATA$kilos_totales,
+  horizontal = TRUE,
+  main = "Distribución de kilos totales incautados",
+  xlab = "Kilos totales incautados (kg)",
+  col = "lightblue",      # color de la caja
+  border = "darkblue",    # color del borde
+  notch = TRUE,           # caja con hendidura
+  outline = TRUE,         # mostrar atípicos
+  cex.axis = 0.8,
+  cex.main = 1
+)
+
+# Opción: agregar puntos tipo rug para ver densidad en el eje
+rug(DATA$kilos_totales, col = "gray40")
+```
+
+#Interpretación
+La variable dependiente kilos_totales presenta una distribución altamente asimétrica a la derecha: la mayoría de países tiene cantidades relativamente bajas de incautación, pero el boxplot muestra varios valores atípicos con incautaciones muy elevadas, lo que revela una dispersión considerable entre países.
+
+#Variable independiente: Ningresos
+```{r}
+# Descripción estadística de la variable Ningresos
+
+freq_ning <- table(DATA$Ningresos)                     # frecuencias
+prop_ning <- prop.table(freq_ning) * 100               # porcentajes
+
+ning_desc <- data.frame(
+  Nivel_ingreso = names(freq_ning),
+  Frecuencia    = as.vector(freq_ning),
+  Porcentaje    = round(as.vector(prop_ning), 1))
+knitr::kable(
+  ning_desc,
+  caption = "Distribución de la variable Ningresos",
+  digits = 1)
+```
+
+```{r}
+# Frecuencias y porcentajes
+freq_ning <- table(DATA$Ningresos)
+prop_ning <- prop.table(freq_ning) * 100
+
+# Paleta de colores (puedes cambiarla)
+colores <- c("#4C78A8", "#F58518", "#54A24B", "#E45756")
+
+# Gráfico de barras bonito
+bp <- barplot(
+  prop_ning,
+  main = "Distribución de niveles de ingreso",
+  ylab = "Porcentaje de países",
+  xlab = "Nivel de ingresos",
+  las  = 2,             # etiquetas del eje X en vertical
+  col  = colores[seq_along(prop_ning)],  # un color por barra
+  border = "gray30",
+  ylim = c(0, max(prop_ning) * 1.15)     # deja espacio para los textos
+)
+
+# Agregar el porcentaje encima de cada barra
+text(
+  x = bp,
+  y = prop_ning,
+  labels = paste0(round(prop_ning, 1), "%"),
+  pos = 3,    # encima de la barra
+  cex = 0.8
+)
+```
+#Interpretación
+La variable Ningresos muestra una distribución relativamente equilibrada, pero con mayor presencia de países de ingreso alto, que representan alrededor de un tercio de la muestra. Les siguen los países de ingreso mediano alto y ingreso mediano bajo, con proporciones también importantes. En cambio, los países de ingreso bajo constituyen una fracción menor del total, mientras que la categoría “no clasificado” prácticamente no aparece.
+En conjunto, la muestra está algo sesgada hacia países de ingresos medios y altos, lo que es importante tener en cuenta al interpretar los resultados del modelo.
+
+
+#Variable independiente: democracia
+```{r}
+dem_desc <- data.frame(
+  Variable = "Índice de democracia",
+  N       = sum(!is.na(DATA$democracia)),
+  Min     = min(DATA$democracia, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$democracia, 0.25, na.rm = TRUE)),  # sin "25%"
+  Mediana = median(DATA$democracia, na.rm = TRUE),
+  Media   = mean(DATA$democracia, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$democracia, 0.75, na.rm = TRUE)),  # sin "75%"
+  Max     = max(DATA$democracia, na.rm = TRUE),
+  SD      = sd(DATA$democracia, na.rm = TRUE)
+)
+
+knitr::kable(
+  dem_desc,
+  digits = 2,
+  row.names = FALSE,   # <- oculta nombres de fila
+  caption = "Descripción estadística de la variable democracia"
+)
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(DATA, aes(x = "", y = democracia)) +
+  geom_boxplot(
+    fill = "lightblue",
+    color = "darkblue",
+    outlier.color = "red",
+    outlier.alpha = 0.6
+  ) +
+  coord_flip() +
+  labs(
+    title = "Distribución del índice de democracia",
+    x = "",
+    y = "Índice de democracia"
+  ) +
+  theme_minimal(base_size = 12)
+```
+#Interpretación
+El índice de democracia presenta valores que se distribuyen aproximadamente entre 0,1 y 0,9. La mediana se ubica alrededor de 0,5, por lo que la mitad de los países de la muestra tiene niveles de democracia moderados. La caja es relativamente amplia, lo que indica una dispersión importante entre países con niveles más bajos (cercanos a 0,3) y otros más altos (cercanos a 0,7), pero sin presencia de valores atípicos extremos. En conjunto, la muestra combina tanto regímenes menos democráticos como otros con niveles de democracia más consolidados.
+
+
+#Variable independiente: corrupción
+
+```{r}
+corr_desc <- data.frame(
+  Variable = "Índice de corrupción",
+  N       = sum(!is.na(DATA$corrupcion)),
+  Min     = min(DATA$corrupcion, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$corrupcion, 0.25, na.rm = TRUE)),  # sin "25%"
+  Mediana = median(DATA$corrupcion, na.rm = TRUE),
+  Media   = mean(DATA$corrupcion, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$corrupcion, 0.75, na.rm = TRUE)),  # sin "75%"
+  Max     = max(DATA$corrupcion, na.rm = TRUE),
+  SD      = sd(DATA$corrupcion, na.rm = TRUE)
+)
+
+knitr::kable(
+  corr_desc,
+  digits = 2,
+  row.names = FALSE,   # <- oculta cualquier nombre de fila
+  caption = "Descripción estadística de la variable corrupción"
+)
+```
+
+```{r}
+boxplot(
+  DATA$corrupcion,
+  horizontal = TRUE,
+  main = "Distribución del índice de corrupción",
+  xlab  = "Índice de corrupción (CPI)",
+  col = "lightgreen",     # color de la caja
+  border = "darkgreen",   # borde
+  notch = TRUE,           # hendidura en la mediana
+  outline = TRUE,         # muestra outliers
+  cex.axis = 0.9,
+  cex.main = 1
+)
+
+# Rug para ver la concentración de valores
+rug(DATA$corrupcion, col = "gray40")
+```
+
+#Interpretación
+La variable corrupción presenta valores que se ubican aproximadamente entre 20 y 80 puntos. La mediana se sitúa en torno a los 40, de modo que la mitad de los países tiene niveles de corrupción percibida iguales o inferiores a ese valor. La caja del boxplot se concentra entre valores cercanos a 35 y 50, lo que indica que la mayor parte de las observaciones se aglomera en un rango relativamente acotado, mientras que los bigotes se extienden hacia valores algo menores y mayores sin mostrar valores atípicos extremos. En conjunto, la distribución sugiere una dispersión moderada en los niveles de corrupción percibida entre los países de la muestra.
+
+#Variable de control: población 
+
+```{r}
+pob_desc <- data.frame(
+  Variable = "Población (habitantes)",
+  N       = sum(!is.na(DATA$poblacion)),
+  Min     = min(DATA$poblacion, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$poblacion, 0.25, na.rm = TRUE)),  # sin "25%"
+  Mediana = median(DATA$poblacion, na.rm = TRUE),
+  Media   = mean(DATA$poblacion, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$poblacion, 0.75, na.rm = TRUE)),  # sin "75%"
+  Max     = max(DATA$poblacion, na.rm = TRUE),
+  SD      = sd(DATA$poblacion, na.rm = TRUE)
+)
+
+knitr::kable(
+  pob_desc,
+  digits = 2,
+  row.names = FALSE,   # oculta nombres de fila
+  caption = "Descripción estadística de la variable de control: población"
+)
+```
+
+```{r}
+boxplot(
+  DATA$poblacion,
+  horizontal = TRUE,
+  main = "Distribución de la población por país",
+  xlab  = "Población (número de habitantes)",
+  col = "lightpink",     # color de la caja
+  border = "deeppink4",  # color del borde
+  notch = TRUE,          # hendidura en la mediana
+  outline = TRUE,        # muestra outliers
+  cex.axis = 0.9,
+  cex.main = 1
+)
+
+# Rug para ver la concentración de países en el eje
+rug(DATA$poblacion, col = "gray40")
+```
+
+#Interpretación
+El boxplot de población evidencia una distribución fuertemente asimétrica a la derecha. La mayor parte de los países se concentra en valores relativamente bajos de población (la caja está muy cercana al origen), mientras que los bigotes y varios puntos individuales se extienden hacia valores muy elevados. En particular, se observan algunos países con poblaciones extremadamente grandes que aparecen como valores atípicos respecto al resto de la muestra.
+
+Esta configuración indica una alta dispersión en el tamaño demográfico de los países: la mayoría son de población moderada, pero unos pocos casos muy poblados “arrastran” la distribución hacia la derecha. Por ello, resulta pertinente incluir la población como variable de control, para evitar que estas diferencias en tamaño distorsionen la relación entre las demás variables y las incautaciones de droga.
+
+```{r}
+reg1 = lm(kilos_totales ~ democracia + poblacion, data = DATA)
+summary(reg1)
+```
+
+
+```{r}
+library(modelsummary)
+```
+
+
+
+```{r}
+model1=list('TABLA (I)'=reg1)
+modelsummary(model1, title = "Regresion: modelo 1",
+             stars = TRUE,
+             output = "kableExtra")
+```
+```{r}
+reg2 = lm(kilos_totales ~ democracia+ corrupcion+ poblacion, data = DATA)
+summary(reg2)
+```
+```{r}
+library(modelsummary)
+model2=list('apropiacion (II)'=reg2)
+modelsummary(model2, title = "Regresion: modelo 2",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+```{r}
+unique(DATA$Ningresos)
+```
+
+
+```{r}
+DATA$`Ningresos` <- factor(DATA$`Ningresos`,                   levels = c("Países de ingreso bajo", "Ingreso mediano alto", "Países de ingreso mediano bajo","Ingreso alto"),labels = c(1, 2, 3,4))
+```
+
+```{r}
+reg3 = lm(kilos_totales ~ democracia+ corrupcion+ poblacion+ Ningresos, data = DATA)
+summary(reg3)
+```
+```{r}
+library(modelsummary)
+model3=list('apropiacion (II)'=reg3)
+modelsummary(model3, title = "Regresion: modelo 3",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+```{r}
+reg_st = lm(scale(kilos_totales) ~ scale(democracia)+scale(corrupcion) + scale(poblacion) , data = DATA)
+summary(reg_st)
+```
+```{r}
+modelo_st=list('Voto estandarizado' = reg_st)
+modelsummary(modelo_st, title = "Regresion: modelo con \ncoeficientes estandarizados",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+
+#LINEALIDAD
+```{r}
+plot(reg1,1)
+plot(reg2, 1)
+plot(reg3, 1)
+```
+
+```{r}
+mean(reg1$residuals)
+mean(reg2$residuals)
+mean(reg3$residuals)
+```
+#HOMOCEDASTICIDAAD
+```{r}
+plot(reg1, 3)
+plot(reg2, 3)
+plot(reg3, 3)
+```
+
+```{r}
+library(lmtest)
+```
+
+```{r}
+bptest(reg1)
+bptest(reg2)
+bptest(reg3)
+```
+
+```{r}
+shapiro.test(reg1$residuals)
+shapiro.test(reg2$residuals)
+shapiro.test(reg3$residuals)
+```
+#NO MULTICOLINEALIDAD
+
+```{r}
+library(DescTools)
+```
+```{r}
+VIF(reg1)
+VIF(reg2)
+VIF(reg3)
+```
+```{r}
+plot(reg1, 5)
+plot(reg2, 5)
+plot(reg3, 5)
+```
+
+```{r}
+check = as.data.frame(influence.measures(reg1)$is.inf)
+check[check$cook.d & check$hat,]
+```
+
+#MODELO BINOMIAL NEGATIVO
+
+```{r}
+unique(DATA$Ningresos)
+```
+
+
+```{r}
+DATA$Ningresos <- factor(DATA$Ningresos,                   levels = c("1" , "2", "3", "4" ),
+                         labels = c(1, 1, 2,2))
+```
+
+
+```{r}
+DATA$Ningresos[DATA$Ningresos == "no clasifica"] <- NA
+### first hypothesis
+h1=formula(Ningresos~kilos_totales)
+
+#regression
+rlog1=glm(h1, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog1)
+summary(rlog1)
+```
+```{r}
+#f <- function(x) format(x, digits = 4, scientific = FALSE)
+modelsummary(modelrl,
+             title = "Regresión Logística",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+```{r}
+h1=formula(Ningresos ~ kilos_totales + poblacion)
+h2=formula(Ningresos ~ kilos_totales+democracia + poblacion)
+h3=formula(Ningresos ~ kilos_totales+democracia+corrupcion+ poblacion)
+```
+
+```{r}
+rlog1=glm(h1, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog1)
+summary(rlog1)
+```
+
+
+```{r}
+rlog2=glm(h2, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog2)
+summary(rlog2)
+```
+```{r}
+rlog3=glm(h3, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog3)
+summary(rlog3)
+```
+```{r}
+modelsrl=list('Adhesión (I)'=rlog1,
+             'Adhesión (II)'=rlog2,
+             'Adhesión (III)'=rlog3)
+
+# formato creado para modelsummary
+formatoNumero = function(x) format(x, digits = 4, scientific = FALSE)
+modelsummary(modelsrl,
+             fmt=formatoNumero, # usa función que creé antes
+             exponentiate = T, # coeficientes sin logaritmo
+             statistic = 'conf.int', # mostrar ICs
+             title = "Regresión Logísticas (Coeficientes Exponenciados)",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+#CLUSTER
+
+```{r}
+dataClus=DATA[,c(4,6,7,8)]
+row.names(dataClus)=DATA$Country
+```
+
+```{r}
+dataClus <- na.omit(dataClus)
+```
+
+```{r}
+library(cluster)
+g.dist = daisy(dataClus, metric="gower")
+```
+
+```{r}
+library(factoextra)
+fviz_nbclust(dataClus, pam,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F)
+```
+```{r}
+library(kableExtra)
+set.seed(123)
+res.pam=pam(g.dist,9,cluster.only = F)
+#nueva columna
+dataClus$pam=res.pam$cluster
+
+# ver
+
+head(dataClus,15)%>%kbl()%>%kable_styling()
+```
+
+```{r}
+fviz_silhouette(res.pam,print.summary = F)
+```
+
+```{r}
+silPAM=data.frame(res.pam$silinfo$widths)
+silPAM$country=row.names(silPAM)
+poorPAM=silPAM[silPAM$sil_width<0,'country']%>%sort()
+poorPAM
+```
+
+```{r}
+aggregate(.~ pam, data=dataClus,mean)
+```
+
+```{r}
+original=aggregate(.~ pam, data=dataClus,mean)
+original[order(original$poblacion),]
+
+```
+
+```{r}
+dataClus$pam=dplyr::recode(dataClus$pam, `5` = 1, `8`=2,`9`=3,`4`=4,`3`=5,`1`=6,`2`=7,`6`=8,`7`=9)
+```
+
+```{r}
+length(DATA$country)
+poorPAM
+length(poorPAM)
+```
+
+```{r}
+dataClus$pam=NULL
+```
+
+```{r}
+fviz_nbclust(dataClus, hcut,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F,hc_func = "agnes")
+```
+
+```{r}
+set.seed(123)
+library(factoextra)
+res.agnes<- hcut(g.dist, k = 3,hc_func='agnes',hc_method = "ward.D")
+dataClus$agnes=res.agnes$cluster
+# ver
+
+head(dataClus,15)%>%kbl()%>%kable_styling()
+```
+
+```{r}
+# Visualize
+fviz_dend(res.agnes, cex = 0.7, horiz = T,main = "")
+```
+
+```{r}
+fviz_silhouette(res.agnes,print.summary = F)
+```
+
+```{r}
+silAGNES=data.frame(res.agnes$silinfo$widths)
+silAGNES$country=row.names(silAGNES)
+poorAGNES=silAGNES[silAGNES$sil_width<0,'country']%>%sort()
+poorAGNES
+```
+
+```{r}
+aggregate(.~ agnes, data=dataClus,mean)
+```
+
+
+```{r}
+dataClus$agnes=NULL
+```
+
+#DIANA
+```{r}
+set.seed(123)
+res.diana <- hcut(g.dist, k = 4,hc_func='diana')
+dataClus$diana=res.diana$cluster
+# veamos
+head(dataClus,15)%>%kbl%>%kable_styling()
+```
+
+```{r}
+# Visualize
+fviz_dend(res.diana, cex = 0.7, horiz = T, main = "")
+```
+
+```{r}
+fviz_silhouette(res.diana,print.summary = F)
+```
+
+```{r}
+silDIANA=data.frame(res.diana$silinfo$widths)
+silDIANA$country=row.names(silDIANA)
+poorDIANA=silDIANA[silDIANA$sil_width<0,'country']%>%sort()
+poorDIANA
+
+```
+
