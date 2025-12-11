@@ -1,0 +1,889 @@
+
+---
+title: "Dashboard incautaciones"
+author: "Luana Barboza Idrogo"
+date: "2025-11-28"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(rio)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(modelsummary)
+library(DT)
+library(cluster)
+library(factoextra)
+library(lmtest)
+library(tidyr)
+
+#Cargar data desde GitHub
+rm(list = ls())
+linkToData <- "https://raw.githubusercontent.com/valentinabarboza/Entrega-2/main/data_final.xls"
+DATA <- import(linkToData)
+
+#Renombrar variables
+DATA <- DATA %>% 
+  rename(democracia = 'Electoral Democracy Index',
+         poblacion = 'World Population',
+         corrupcion = 'CPI SCORE',
+         Ningresos = 'Income group')
+
+#Asegurar que Kilos_totales sea numérica
+DATA$kilos_totales <- as.numeric(DATA$kilos_totales)
+```
+
+
+
+Tema, pregunta e hipótesis {data-icon="fa-bullseye"}
+====================================================
+
+Row {data-width=650}
+----------------------------------------------------
+
+### Tema de investigación
+
+**¿Quiénes están realmente ganando la “guerra contra las drogas”?**  
+
+Este dashboard analiza cómo las características **institucionales** (democracia y corrupción) y **socioeconómicas** (población y número de ingresos económicos) de los países se relacionan con el nivel de **incautaciones de drogas** registradas en 2023. El objetivo es ir más allá del discurso político y observar los datos comparados para entender en qué contextos estatales se registran más o menos incautaciones.
+
+---
+
+### Pregunta de investigación
+
+**¿En qué medida los factores socioeconómicos (número de ingresos económicos del país) y políticos (democracia y corrupción), controlando por población, explican el nivel de incautaciones de drogas (kilos incautados) a nivel global en el año 2023?**
+
+---
+
+### Hipótesis
+
+- **H1 – Institucional**  
+  Los países con **mayor nivel de democracia** y **menores niveles de corrupción**, controlando por población, registran **más incautaciones de drogas**, porque cuentan con instituciones más transparentes y capaces de detectar, decomisar y reportar el narcotráfico.
+
+- **H2 – Económica**  
+  Los países con **mayor número de ingresos económicos** presentan **mayor volumen de incautaciones**, ya que disponen de más recursos materiales y humanos para perseguir, controlar y registrar estas actividades ilícitas.
+
+- **H0 – Nula**  
+  El número de ingresos económicos, la democracia y la corrupción, controlando por población, **no explican de manera significativa** el nivel de incautaciones de drogas entre países.
+
+
+Variable dependiente {data-icon="fa-balance-scale"}
+===================================================
+
+Row {data-width=650}
+----------------------------------------------------
+
+### Incautaciones de drogas (variable dependiente)
+
+La variable dependiente del estudio es el **nivel de incautaciones de drogas por país en 2023**, medido como el total de kilos incautados y registrado en la base de datos como `kilos_totales`. 
+
+Esta variable se interpreta como un indicador del **desempeño estatal frente al narcotráfico**: refleja tanto la presencia de mercados ilegales como la capacidad de las instituciones para detectar, decomisar y registrar oficialmente las incautaciones (UNODC, 2023).
+
+
+```{r}
+# Descripción estadística de la variable dependiente
+vd_desc <- data.frame(
+  Variable = "Kilos totales incautados (kg)",
+  N       = sum(!is.na(DATA$kilos_totales)),
+  Min     = min(DATA$kilos_totales, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$kilos_totales, 0.25, na.rm = TRUE)),
+  Mediana = median(DATA$kilos_totales, na.rm = TRUE),
+  Media   = mean(DATA$kilos_totales, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$kilos_totales, 0.75, na.rm = TRUE)),
+  Max     = max(DATA$kilos_totales, na.rm = TRUE),
+  SD      = sd(DATA$kilos_totales, na.rm = TRUE)
+)
+
+knitr::kable(
+  vd_desc,
+  digits = 2,
+  row.names = FALSE,
+  caption = "Descripción estadística de la variable dependiente"
+)
+```
+
+#### Distribución de kilos totales  incautados
+```{r}
+# Boxplot de la variable dependiente
+boxplot(
+  DATA$kilos_totales,
+  horizontal = TRUE,
+  xlab = "Kilos totales incautados (kg)",
+  col = "lightblue",
+  border = "darkblue",
+  notch = TRUE,
+  outline = TRUE
+)
+
+rug(DATA$kilos_totales, col = "gray40")
+
+```
+
+
+
+Variables independientes y de control {data-icon="fa-sliders"}
+==============================================================
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+### Número de ingresos económicos
+
+La primera variable independiente es el **número de ingresos económicos del país** (`Ningresos`), construida a partir de la información del Banco Mundial. Esta variable resume la **capacidad económica** de los países y se usa como aproximación al nivel de recursos disponibles para financiar políticas públicas, incluida la lucha contra el narcotráfico.
+
+
+```{r}
+# Descripción estadística de la variable Ningresos
+
+freq_ning <- table(DATA$Ningresos)                     # frecuencias
+prop_ning <- prop.table(freq_ning) * 100               # porcentajes
+
+ning_desc <- data.frame(
+  Nivel_ingreso = names(freq_ning),
+  Frecuencia    = as.vector(freq_ning),
+  Porcentaje    = round(as.vector(prop_ning), 1))
+knitr::kable(
+  ning_desc,
+  caption = "Distribución de la variable Ningresos",
+  digits = 1)
+```
+### Democracia
+
+La segunda variable independiente es el índice de democracia (democracia), tomado del Democracy Report 2023 de V-Dem. Valores más altos indican mayor calidad democrática en términos de competencia electoral, participación y libertades civiles.
+
+```{r}
+dem_desc <- data.frame(
+  Variable = "Índice de democracia",
+  N       = sum(!is.na(DATA$democracia)),
+  Min     = min(DATA$democracia, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$democracia, 0.25, na.rm = TRUE)),  # sin "25%"
+  Mediana = median(DATA$democracia, na.rm = TRUE),
+  Media   = mean(DATA$democracia, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$democracia, 0.75, na.rm = TRUE)),  # sin "75%"
+  Max     = max(DATA$democracia, na.rm = TRUE),
+  SD      = sd(DATA$democracia, na.rm = TRUE)
+)
+
+knitr::kable(
+  dem_desc,
+  digits = 2,
+  row.names = FALSE,   # <- oculta nombres de fila
+  caption = "Descripción estadística de la variable democracia"
+)
+```
+
+### Corrupción
+
+La tercera variable independiente es el **índice de corrupción** (`corrupcion`), basado en el *Corruption Perceptions Index 2023* de Transparency International. Valores más altos indican **menor corrupción percibida** en el sector público; valores bajos sugieren contextos más corruptos.
+
+```{r}
+corr_desc <- data.frame(
+  Variable = "Índice de corrupción",
+  N       = sum(!is.na(DATA$corrupcion)),
+  Min     = min(DATA$corrupcion, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$corrupcion, 0.25, na.rm = TRUE)),  # sin "25%"
+  Mediana = median(DATA$corrupcion, na.rm = TRUE),
+  Media   = mean(DATA$corrupcion, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$corrupcion, 0.75, na.rm = TRUE)),  # sin "75%"
+  Max     = max(DATA$corrupcion, na.rm = TRUE),
+  SD      = sd(DATA$corrupcion, na.rm = TRUE)
+)
+
+knitr::kable(
+  corr_desc,
+  digits = 2,
+  row.names = FALSE,   # <- oculta cualquier nombre de fila
+  caption = "Descripción estadística de la variable corrupción"
+)
+```
+
+
+### Población (variable de control)
+
+La variable de control es la **población total del país** (`poblacion`), tomada de las estimaciones del Banco Mundial. Se incluye para capturar efectos de escala: es esperable que, a mayor número de habitantes, haya **más incautaciones en términos absolutos**, independientemente de la calidad institucional o del nivel de ingresos.
+
+```{r}
+pob_desc <- data.frame(
+  Variable = "Población (habitantes)",
+  N       = sum(!is.na(DATA$poblacion)),
+  Min     = min(DATA$poblacion, na.rm = TRUE),
+  Q1      = as.numeric(quantile(DATA$poblacion, 0.25, na.rm = TRUE)),  # sin "25%"
+  Mediana = median(DATA$poblacion, na.rm = TRUE),
+  Media   = mean(DATA$poblacion, na.rm = TRUE),
+  Q3      = as.numeric(quantile(DATA$poblacion, 0.75, na.rm = TRUE)),  # sin "75%"
+  Max     = max(DATA$poblacion, na.rm = TRUE),
+  SD      = sd(DATA$poblacion, na.rm = TRUE)
+)
+
+knitr::kable(
+  pob_desc,
+  digits = 2,
+  row.names = FALSE,   # oculta nombres de fila
+  caption = "Descripción estadística de la variable de control: población"
+)
+```
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+### Gráfico de niveles de ingreso
+
+```{r}
+#Distribución de niveles de ingreso
+# Frecuencias y porcentajes
+freq_ning <- table(DATA$Ningresos)
+prop_ning <- prop.table(freq_ning) * 100
+
+# Paleta de colores (puedes cambiarla)
+colores <- c("#4C78A8", "#F58518", "#54A24B", "#E45756")
+
+# Gráfico de barras bonito
+bp <- barplot(
+  prop_ning,
+  main = "Distribución de niveles de ingreso",
+  ylab = "Porcentaje de países",
+  xlab = "Nivel de ingresos",
+  las  = 2,             # etiquetas del eje X en vertical
+  col  = colores[seq_along(prop_ning)],  # un color por barra
+  border = "gray30",
+  ylim = c(0, max(prop_ning) * 1.15)     # deja espacio para los textos
+)
+
+# Agregar el porcentaje encima de cada barra
+text(
+  x = bp,
+  y = prop_ning,
+  labels = paste0(round(prop_ning, 1), "%"),
+  pos = 3,    # encima de la barra
+  cex = 0.8
+)
+```
+
+### Gráfico índice de democracia
+
+```{r}
+library(ggplot2)
+
+ggplot(DATA, aes(x = "", y = democracia)) +
+  geom_boxplot(
+    fill = "lightblue",
+    color = "darkblue",
+    outlier.color = "red",
+    outlier.alpha = 0.6
+  ) +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Índice de democracia"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+### Gráfico de Corrupción
+
+```{r}
+boxplot(
+  DATA$corrupcion,
+  horizontal = TRUE,
+  xlab  = "Índice de corrupción (CPI)",
+  col = "lightgreen",     # color de la caja
+  border = "darkgreen",   # borde
+  notch = TRUE,           # hendidura en la mediana
+  outline = TRUE,         # muestra outliers
+  cex.axis = 0.9,
+  cex.main = 1
+)
+
+# Rug para ver la concentración de valores
+rug(DATA$corrupcion, col = "gray40")
+```
+
+### Gráfico de Población
+
+```{r}
+boxplot(
+  DATA$poblacion,
+  horizontal = TRUE,
+  xlab  = "Población (número de habitantes)",
+  col = "lightpink",     # color de la caja
+  border = "deeppink4",  # color del borde
+  notch = TRUE,          # hendidura en la mediana
+  outline = TRUE,        # muestra outliers
+  cex.axis = 0.9,
+  cex.main = 1
+)
+
+# Rug para ver la concentración de países en el eje
+rug(DATA$poblacion, col = "gray40")
+```
+
+Relación de la variable dependiente con las variables explicativas {data-icon="fa-solid fa-book-open"}
+==============================================================================================
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### Kilos incautados vs número de ingresos económicos
+
+En este gráfico de cajas y bigotes se observa cómo varían los kilos totales incautados según el nivel de ingresos económicos del país (Ningresos). En todos los grupos de ingreso la mayoría de observaciones se concentran en valores relativamente bajos (las cajas cercanas al cero), pero la dispersión y la presencia de valores extremos cambia según el nivel de ingresos. Los países de ingreso mediano alto y de ingreso mediano bajo presentan cajas más altas y bigotes más largos, lo que indica tanto una mediana como un rango intercuartílico mayores, es decir, en estos estratos se registran en promedio más kilos incautados y una variabilidad más amplia. Además, en estos mismos grupos se observan varios valores atípicos que superan con creces el resto de observaciones, alcanzando varios millones de kilos incautados, lo que sugiere la existencia de unos pocos países que concentran incautaciones de gran escala.
+En contraste, los países de ingreso alto y los no clasificados muestran cajas más comprimidas y cercanas al eje horizontal, con menos puntos extremos y sin incautaciones tan voluminosas como las observadas en los grupos de ingreso mediano. Esto sugiere que, aunque hay incautaciones en todos los niveles de ingreso, los volúmenes más altos y dispersos se concentran principalmente en países de ingreso mediano.
+
+### Kilos incautados vs democracia
+
+En este gráfico de dispersión se observa la relación entre los kilos totales incautados y el índice de democracia del país (democracia). Cada punto representa un país en un año determinado. La mayoría de observaciones se concentran en valores relativamente bajos de incautaciones, cercanos a cero, a lo largo de casi todo el rango del índice de democracia. Sin embargo, aparecen algunos valores extremos (puntos muy altos en el eje vertical) que corresponden a países con volúmenes de incautación excepcionalmente elevados.
+
+La línea de regresión ajustada muestra una pendiente ligeramente negativa, lo que sugiere que, en promedio, a medida que aumenta el nivel de democracia, los kilos incautados tienden a disminuir levemente. No obstante, la nube de puntos es bastante dispersa y la mayoría de valores se agrupa cerca del eje horizontal, por lo que la relación parece ser débil y fuertemente influida por unos pocos casos con incautaciones muy altas, especialmente en países con índices de democracia bajos o intermedios. En conjunto, el gráfico indica que no existe una asociación lineal fuerte entre democracia y kilos incautados, aunque se insinúa una tendencia a mayores volúmenes de incautación en contextos menos democráticos.
+
+### Kilos incautados vs corrupción
+
+En este gráfico de dispersión se explora la relación entre los kilos totales incautados y el índice de corrupción (CPI). Cada punto representa un país en un año determinado. En el eje horizontal se ubica el valor del CPI (donde puntajes más bajos suelen asociarse con mayor corrupción percibida y puntajes más altos con menor corrupción), mientras que en el eje vertical se muestran los kilos totales incautados. La mayoría de observaciones se concentran cerca del cero en el eje vertical, lo que indica que, para la gran parte de los países, los volúmenes anuales de incautación son relativamente bajos, independientemente del nivel de corrupción.
+
+Sin embargo, se observan varios valores extremos en la parte superior del gráfico, especialmente en el tramo de CPI bajo y medio (aprox. entre 15 y 40 puntos), donde algunos países registran incautaciones de varios millones de kilos. La línea de regresión ajustada presenta una pendiente negativa, lo que sugiere que, en promedio, a medida que aumenta el valor del CPI (es decir, cuando la corrupción percibida es menor), los kilos incautados tienden a disminuir ligeramente. No obstante, la nube de puntos es bastante dispersa y la mayor parte de la variación está determinada por unos pocos casos con incautaciones muy altas, por lo que la relación entre corrupción e incautaciones parece ser débil y heterogénea: los mayores volúmenes de incautación tienden a concentrarse en países con niveles más altos de corrupción percibida, pero no de manera uniforme en todos los casos.
+
+### Kilos incautados vs población
+
+Finalmente, se muestra la relación entre los kilos totales incautados y la población total del país (poblacion), que aquí actúa como variable de control. Cada punto representa un país en un año determinado. La nube de puntos revela que la mayoría de observaciones se concentra cerca del origen del gráfico: países con poblaciones relativamente pequeñas o medianas y con volúmenes de incautación bajos, cercanos a cero. Esto sugiere que, en la mayor parte de los casos, el aumento de la población no se traduce automáticamente en incautaciones muy elevadas, sino que la mayoría de países, independientemente de su tamaño, registra cantidades moderadas de droga incautada.
+
+La línea de regresión presenta una pendiente positiva, lo que indica que, en promedio, los países con mayor población tienden a registrar más kilos incautados. No obstante, la relación visual es débil y está fuertemente condicionada por algunos valores extremos: por un lado, países de población relativamente baja que aparecen con incautaciones muy altas; por otro, países muy poblados que también presentan volúmenes de incautación superiores al resto. En conjunto, el gráfico sugiere una asociación positiva pero poco lineal entre población e incautaciones, lo que justifica tratar la población como variable de control para distinguir el efecto del “tamaño del país” de otros factores institucionales o estructurales analizados en el estudio.
+
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+### Gráfico de Kilos incautados y número de ingresos
+
+```{r}
+ggplot(DATA, aes(x = Ningresos, y = kilos_totales)) +
+  geom_boxplot(fill = "lightcoral", color = "brown4") +
+  labs(
+    x = "Nivel de ingresos económicos",
+    y = "Kilos totales incautados",
+  ) +
+  theme_minimal()
+```
+
+
+### Gráfico kilos incautados vs democracia
+```{r}
+ggplot(DATA, aes(x = democracia, y = kilos_totales)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "darkblue") +
+  labs(
+    x = "Índice de democracia",
+    y = "Kilos totales incautados",
+  ) +
+  theme_minimal()
+```
+
+
+### Gráfico de Kilos incautados y corrupción
+```{r}
+ggplot(DATA, aes(x = corrupcion, y = kilos_totales)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "darkgreen") +
+  labs(
+    x = "Índice de corrupción (CPI)",
+    y = "Kilos totales incautados",
+  ) +
+  theme_minimal()
+```
+
+### Gráficos Kilos incautados y población
+
+```{r}
+ggplot(DATA, aes(x = poblacion, y = kilos_totales)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "deeppink4") +
+  labs(
+    x = "Población (habitantes)",
+    y = "Kilos totales incautados",
+  ) +
+  theme_minimal()
+```
+
+Regresión lineal {data-icon="fa-solid fa-book-open"}
+==============================================================================================
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### Modelos de regresión lineal
+
+Aquí se presentan los tres modelos lineales estimados, donde la variable dependiente es el total de kilos incautados (`kilos_totales`) y las variables explicativas son democracia, corrupción, población y número de ingresos económicos.
+
+### Regresión 1
+
+Modelo base con democracia y población como predictores de los kilos totales incautados.
+
+```{r}
+reg1 = lm(kilos_totales ~ democracia + poblacion, data = DATA)
+summary(reg1)
+```
+### Regresión 2
+
+Modelo que añade la variable de corrupción como factor institucional adicional.
+
+```{r}
+reg2 = lm(kilos_totales ~ democracia+ corrupcion+ poblacion, data = DATA)
+summary(reg2)
+```
+
+### Regresión 3
+Modelo completo que incorpora, además, el número de ingresos económicos del país.
+
+```{r}
+unique(DATA$Ningresos)
+```
+
+```{r}
+DATA$`Ningresos` <- factor(DATA$`Ningresos`,                   levels = c("Países de ingreso bajo", "Ingreso mediano alto", "Países de ingreso mediano bajo","Ingreso alto"),labels = c(1, 2, 3,4))
+```
+
+```{r}
+reg3 = lm(kilos_totales ~ democracia+ corrupcion+ poblacion+ Ningresos, data = DATA)
+summary(reg3)
+```
+
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+### TABLA 1
+```{r}
+model1=list('TABLA (I)'=reg1)
+modelsummary(model1, title = "Regresion: modelo 1",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+
+### TABLA 2
+```{r}
+library(modelsummary)
+model2=list('apropiacion (II)'=reg2)
+modelsummary(model2, title = "Regresion: modelo 2",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+
+### TABLA 3
+```{r}
+library(modelsummary)
+model3=list('apropiacion (II)'=reg3)
+modelsummary(model3, title = "Regresion: modelo 3",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+
+ANOVA Y PRUEBAS {data-icon="fa-solid fa-book-open"}
+==============================================================================================
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+
+### Comparación de modelos (ANOVA)
+
+La prueba ANOVA permite comparar los modelos anidados (Modelo 1, Modelo 2 y Modelo 3) y evaluar si la incorporación de nuevas variables (corrupción y número de ingresos económicos) mejora significativamente el ajuste del modelo.
+
+```{r}
+anova(reg1, reg2, reg3)
+```
+### AIC
+```{r}
+data.frame(
+  Modelo = c("Modelo 1", "Modelo 2", "Modelo 3"),
+  AIC    = c(AIC(reg1), AIC(reg2), AIC(reg3)))
+```
+
+### MEDIA
+```{r}
+mean(reg1$residuals)
+mean(reg2$residuals)
+mean(reg3$residuals)
+```
+
+
+### HOMOCEDASTICIDAD
+```{r}
+bptest(reg1)
+bptest(reg2)
+bptest(reg3)
+```
+
+### NO MULTICOLINEALIDAD 
+```{r}
+library(DescTools)
+VIF(reg1)
+VIF(reg2)
+VIF(reg3)
+```
+
+
+### NORMALIDAD DE RESIDUOS
+```{r}
+shapiro.test(reg1$residuals)
+shapiro.test(reg2$residuals)
+shapiro.test(reg3$residuals)
+```
+
+### COOK'S DISTANCE
+```{r}
+check = as.data.frame(influence.measures(reg1)$is.inf)
+check[check$cook.d & check$hat,]
+```
+
+### VALORES ESTANDARIZADOS
+```{r}
+reg_st = lm(scale(kilos_totales) ~ scale(democracia)+scale(corrupcion) + scale(poblacion) , data = DATA)
+summary(reg_st)
+```
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### LINEALIDAD REG 1
+
+```{r}
+plot(reg1,1)
+```
+
+### LINEALIDAD REG 2
+
+```{r}
+plot(reg2, 1)
+```
+
+### LINEALIDAD REG 3
+
+```{r}
+plot(reg3, 1)
+```
+
+### HOMOCEDASTICIDAD REG 1
+```{r}
+plot(reg1, 3)
+```
+
+### HOMOCEDASTICIDAD REG 2
+
+```{r}
+plot(reg2, 3)
+```
+### HOMOCEDASTICIDAD REG 3
+```{r}
+plot(reg3, 3)
+```
+
+
+### Gráfico - V.I REG 1
+
+```{r}
+plot(reg1, 5)
+```
+
+### Gráfico - V.I REG 2
+
+```{r}
+plot(reg2, 5)
+```
+
+### Gráfico - V.I REG 3
+
+```{r}
+plot(reg3, 5)
+```
+
+### Modelo con coeficientes estandarizados
+```{r}
+modelo_st=list('Voto estandarizado' = reg_st)
+modelsummary(modelo_st, title = "Regresion: modelo con \ncoeficientes estandarizados",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+
+Regresión logística binaria {data-icon="fa-toggle-on"}
+=====================================================
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### Planteamiento del modelo logístico
+
+En estos modelos la variable dependiente es **ingreso_alto** (`ingreso_alto`), que toma el valor 1 si el país pertenece al grupo de **ingreso alto** y 0 en caso contrario. El objetivo es evaluar cómo las incautaciones de drogas y las variables políticas y demográficas se asocian a la **probabilidad de que un país sea de ingreso alto**.
+
+Se estiman tres especificaciones:
+
+- **Modelo I (H1):** kilos_totales + población  
+- **Modelo II (H2):** kilos_totales + democracia + población  
+- **Modelo III (H3):** kilos_totales + democracia + corrupción + población
+
+
+```{r}
+unique(DATA$Ningresos)
+```
+
+```{r}
+DATA$Ningresos <- factor(DATA$Ningresos,                   levels = c("1" , "2", "3", "4" ),
+                         labels = c(1, 1, 2,2))
+```
+
+### Regresión 1
+```{r}
+DATA$Ningresos[DATA$Ningresos == "no clasifica"] <- NA
+### first hypothesis
+h1=formula(Ningresos~kilos_totales)
+
+#regression
+rlog1=glm(h1, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog1)
+summary(rlog1)
+```
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### Tabla regresión 1
+```{r}
+#f <- function(x) format(x, digits = 4, scientific = FALSE)
+modelsummary(modelrl,
+             title = "Regresión Logística",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+```{r}
+h1=formula(Ningresos ~ kilos_totales + poblacion)
+h2=formula(Ningresos ~ kilos_totales+democracia + poblacion)
+h3=formula(Ningresos ~ kilos_totales+democracia+corrupcion+ poblacion)
+```
+
+### H1
+```{r}
+rlog1=glm(h1, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog1)
+summary(rlog1)
+```
+
+### H2
+
+```{r}
+rlog2=glm(h2, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog2)
+summary(rlog2)
+```
+
+### H3
+
+```{r}
+rlog3=glm(h3, data=DATA,family = binomial)
+modelrl=list('Drogas por nivel de ingresos'=rlog3)
+summary(rlog3)
+```
+
+### TABLA - Regresión Logísticas (Coeficientes Exponenciados)
+```{r}
+modelsrl=list('Adhesión (I)'=rlog1,
+             'Adhesión (II)'=rlog2,
+             'Adhesión (III)'=rlog3)
+
+# formato creado para modelsummary
+formatoNumero = function(x) format(x, digits = 4, scientific = FALSE)
+modelsummary(modelsrl,
+             fmt=formatoNumero, # usa función que creé antes
+             exponentiate = T, # coeficientes sin logaritmo
+             statistic = 'conf.int', # mostrar ICs
+             title = "Regresión Logísticas (Coeficientes Exponenciados)",
+             stars = TRUE,
+             output = "kableExtra")
+```
+
+Clusters {data-icon="fa-solid fa-book-open"}
+==============================================================================================
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+### PAM
+En esta sección se aplica el método **PAM** usando la distancia de Gower para agrupar países según sus niveles de incautaciones, democracia, corrupción y población.
+
+```{r}
+dataClus=DATA[,c(4,6,7,8)]
+row.names(dataClus)=DATA$Country
+```
+
+```{r}
+dataClus <- na.omit(dataClus)
+```
+
+```{r}
+library(cluster)
+g.dist = daisy(dataClus, metric="gower")
+```
+
+
+```{r}
+library(kableExtra)
+set.seed(123)
+res.pam=pam(g.dist,9,cluster.only = F)
+#nueva columna
+dataClus$pam=res.pam$cluster
+
+# ver
+
+head(dataClus,15)%>%kbl()%>%kable_styling()
+```
+
+
+```{r}
+silPAM=data.frame(res.pam$silinfo$widths)
+silPAM$country=row.names(silPAM)
+poorPAM=silPAM[silPAM$sil_width<0,'country']%>%sort()
+poorPAM
+```
+
+
+```{r}
+aggregate(.~ pam, data=dataClus,mean)
+```
+
+```{r}
+original=aggregate(.~ pam, data=dataClus,mean)
+original[order(original$poblacion),]
+```
+
+```{r}
+dataClus$pam=dplyr::recode(dataClus$pam, `5` = 1, `8`=2,`9`=3,`4`=4,`3`=5,`1`=6,`2`=7,`6`=8,`7`=9)
+```
+
+
+```{r}
+length(DATA$country)
+poorPAM
+length(poorPAM)
+```
+
+```{r}
+dataClus$pam=NULL
+```
+
+
+### AGNES (clustering jerárquico aglomerativo)
+
+Aquí se utiliza un método jerárquico aglomerativo (**AGNES**) con enlace de Ward para identificar grupos de países similares.
+
+```{r}
+set.seed(123)
+library(factoextra)
+res.agnes<- hcut(g.dist, k = 3,hc_func='agnes',hc_method = "ward.D")
+dataClus$agnes=res.agnes$cluster
+# ver
+
+head(dataClus,15)%>%kbl()%>%kable_styling()
+```
+
+### AGNES - PAÍSES
+```{r}
+silAGNES=data.frame(res.agnes$silinfo$widths)
+silAGNES$country=row.names(silAGNES)
+poorAGNES=silAGNES[silAGNES$sil_width<0,'country']%>%sort()
+poorAGNES
+```
+
+
+```{r}
+aggregate(.~ agnes, data=dataClus,mean)
+```
+
+```{r}
+dataClus$agnes=NULL
+```
+
+### DIANA (clustering jerárquico divisivo)
+Finalmente, se aplica el método jerárquico divisivo (**DIANA**) para explorar otra forma de segmentar a los países según sus características.
+
+```{r}
+set.seed(123)
+res.diana <- hcut(g.dist, k = 4,hc_func='diana')
+dataClus$diana=res.diana$cluster
+# veamos
+head(dataClus,15)%>%kbl%>%kable_styling()
+```
+
+
+```{r}
+silDIANA=data.frame(res.diana$silinfo$widths)
+silDIANA$country=row.names(silDIANA)
+poorDIANA=silDIANA[silDIANA$sil_width<0,'country']%>%sort()
+poorDIANA
+```
+
+
+
+Column {data-width=500} {.tabset}
+-----------------------------------------------------------------------
+
+
+### PAM - Número de clusters
+```{r}
+library(factoextra)
+fviz_nbclust(dataClus, pam,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F)
+```
+### PAM SILHOUTTE
+```{r}
+fviz_silhouette(res.pam,print.summary = F)
+```
+
+
+### AGNES - Número de clusters
+```{r}
+fviz_nbclust(dataClus, hcut,diss=g.dist,method = "gap_stat",k.max = 10,verbose = F,hc_func = "agnes")
+```
+
+### AGNES - DENDOGRAMA
+```{r}
+# Visualize
+fviz_dend(res.agnes, cex = 0.7, horiz = T,main = "")
+```
+
+### AGNES - SILHOUETTE
+```{r}
+fviz_silhouette(res.agnes,print.summary = F)
+```
+
+
+### DIANA - DENDOGRAMA
+```{r}
+# Visualize
+fviz_dend(res.diana, cex = 0.7, horiz = T, main = "")
+```
+
+### DIANA - SILHOUETTE
+```{r}
+fviz_silhouette(res.diana,print.summary = F)
+```
+
+
+Conclusiones {data-icon="fa-flag-checkered"}
+===========================================
+
+Row {data-width=100}
+----------------------------------------------------
+
+### Síntesis de resultados
+
+- Las incautaciones de drogas están fuertemente concentradas en pocos países y muestran una alta asimetría, lo que evidencia que el narcotráfico no se distribuye de manera homogénea a nivel global.
+
+- El Modelo 2 (democracia, corrupción y población) ofrece el mejor ajuste, indicando que las condiciones institucionales y el tamaño poblacional son más relevantes que la categoría de ingreso para explicar las incautaciones.
+
+- Los coeficientes estandarizados permiten identificar qué variables tienen mayor peso en el fenómeno, independientemente de la escala de medición.
+
+- La regresión binomial negativa confirma la presencia de sobredispersión, típica en datos de criminalidad, y complementa el análisis lineal al modelar directamente la naturaleza de conteo de las incautaciones.
+
+- La regresión logística muestra cómo democracia, corrupción, población e incautaciones se relacionan con la probabilidad de que un país pertenezca al grupo de ingresos altos, permitiendo identificar factores que aumentan o reducen esa probabilidad.
+
+- Los métodos de clúster revelan perfiles diferenciados de países según sus niveles de incautaciones, características institucionales y población, mostrando que existen patrones heterogéneos que no responden a una única configuración.
